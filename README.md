@@ -31,6 +31,10 @@ ondevice-ai-civil-complaint/
 │   ├── inference/          # 추론 엔진
 │   └── utils/              # 유틸리티
 ├── configs/                 # 설정 파일
+├── docs/                    # 프로젝트 문서
+│   ├── draft.md            # 문제정의서
+│   ├── toc.md              # 제안서 작성 가이드
+│   └── prd.md              # PRD (Product Requirements Document)
 ├── notebooks/              # 실험 노트북
 └── tests/                  # 테스트 코드
 ```
