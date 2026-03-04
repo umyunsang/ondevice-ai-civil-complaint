@@ -1,11 +1,57 @@
 # Product Requirements Document (PRD)
 # On-Device AI 민원 분석 및 처리 시스템
 
-**문서 버전**: 1.0
-**작성일**: 2026-03-04
+**문서 버전**: 2.0
+**작성일**: 2026-03-05 (수정)
 **프로젝트명**: On-Device AI 민원 분석 및 처리 시스템
 **담당 멘토**: 천세진 교수 (sjchun@dau.ac.kr)
 **팀 규모**: 4명
+**주요 변경**: EXAONE-Deep-7.8B 모델 적용, vLLM 서빙 적용
+
+---
+
+## 주요 변경사항 (v2.0)
+
+본 문서는 v1.0 대비 다음과 같은 핵심 기술 스택 변경사항을 반영합니다:
+
+### 1. 모델 변경: EXAONE-Deep-7.8B 적용
+- **변경 전**: Gemma 2, Llama 3 등 다양한 오픈소스 sLLM 후보군
+- **변경 후**: **EXAONE-Deep-7.8B** (LGAI-EXAONE/EXAONE-Deep-7.8B)
+- **선정 이유**:
+  - LG AI Research 개발 한국어 특화 모델
+  - 한국 표준 테스트(CSAT Math 2025)에서 89.9% 성능 입증
+  - 32,768 토큰 컨텍스트 길이로 긴 민원 처리에 최적
+  - Grouped Query Attention (GQA) 구조로 추론 효율성 우수
+  - 추론 강화(`<thought>`) 기능으로 답변 품질 향상
+
+### 2. 서빙 프레임워크 변경: vLLM 적용
+- **변경 전**: Ollama
+- **변경 후**: **vLLM (v0.4.0+)**
+- **선정 이유**:
+  - EXAONE-Deep-7.8B 공식 지원
+  - PagedAttention으로 메모리 효율 극대화
+  - Continuous batching으로 처리량 2-3배 향상
+  - OpenAI 호환 API로 기존 코드 재사용 용이
+  - 프로덕션 환경에 최적화
+
+### 3. 양자화 방법 변경: AWQ 적용
+- **변경 전**: ONNX Runtime, TensorRT, llama.cpp 등 일반 양자화
+- **변경 후**: **AWQ (Activation-aware Weight Quantization)**
+- **선정 이유**:
+  - EXAONE-Deep-7.8B 공식 지원 (12개 사전 양자화 버전 제공)
+  - vLLM과 완벽한 호환성
+  - INT4 양자화로 50% 크기 감소하면서도 정확도 유지
+  - 추론 속도 2배 이상 향상
+
+### 4. SFT 방법론 최적화
+- **Chat Template**: EXAONE 표준 포맷 적용 (`<thought>\n` 접두사 활용)
+- **프롬프트 엔지니어링**: Step-by-step reasoning 강화 (EXAONE 추론 능력 활용)
+- **하이퍼파라미터**: bfloat16 기반 QLoRA, Target modules 최적화
+
+### 5. 기술 스택 호환성 업데이트
+- **Python 라이브러리**: HuggingFace Transformers 4.40.0+, PEFT 0.10.0+
+- **GPU 요구사항**: CUDA 12.1+, 최소 16GB VRAM (AWQ 사용 시 8GB)
+- **Docker 구성**: vLLM + FastAPI + Streamlit 멀티컨테이너 아키텍처
 
 ---
 
@@ -30,7 +76,7 @@
 공공기관의 민원 데이터는 민감한 개인정보를 포함하고 있어 외부 클라우드 API(ChatGPT, Claude 등)를 사용할 수 없으며, 기존의 단순 키워드 기반 분류 방식으로는 복잡한 민원 맥락을 이해하고 적절한 답변을 생성하기 어렵습니다. 담당 공무원은 수많은 민원을 수작업으로 처리하며 유사 사례를 검색하는 데 막대한 시간을 소비하고 있습니다.
 
 ### 1.2 제안 솔루션 (Proposed Solution)
-폐쇄망(온프레미스) 환경에서 구동 가능한 경량화된 LLM(sLLM)을 활용하여 민원을 자동으로 분류하고, 과거 답변 데이터를 학습해 고품질의 표준 답변 초안을 즉시 생성하는 On-Device AI 시스템을 개발합니다. 공개 민원 데이터를 크롤링하여 도메인 특화 파인튜닝을 실시하고, FAISS 기반 벡터 검색으로 유사 사례를 빠르게 참조할 수 있는 통합 솔루션을 제공합니다.
+폐쇄망(온프레미스) 환경에서 구동 가능한 한국어 특화 LLM인 **EXAONE-Deep-7.8B** (LG AI Research)를 활용하여 민원을 자동으로 분류하고, 과거 답변 데이터를 학습해 고품질의 표준 답변 초안을 즉시 생성하는 On-Device AI 시스템을 개발합니다. 공개 민원 데이터를 크롤링하여 도메인 특화 파인튜닝을 실시하고, vLLM 기반 고속 서빙 및 FAISS 기반 벡터 검색으로 유사 사례를 빠르게 참조할 수 있는 통합 솔루션을 제공합니다.
 
 ### 1.3 핵심 비즈니스 영향 (Key Business Impact)
 - **업무 효율성 향상**: 민원 처리 시간을 평균 60% 이상 단축 (수작업 대비)
@@ -103,7 +149,11 @@
 
 #### KPI-001: 답변 생성 속도
 - **지표**: 민원 입력 후 답변 초안 생성까지 소요 시간
-- **목표값**: p50 < 2초, p95 < 5초 (폐쇄망 서버 환경: CPU 16코어, RAM 32GB 기준)
+- **목표값**:
+  - **GPU 환경** (16GB+ VRAM): p50 < 1.5초, p95 < 3초
+  - **AWQ 양자화**: p50 < 1초, p95 < 2초
+  - (vLLM PagedAttention 및 Continuous Batching 효과 반영)
+- **측정 환경**: NVIDIA A10G/RTX 4090급, RAM 32GB
 
 #### KPI-002: 민원 분류 정확도 (Accuracy)
 - **지표**: 시스템이 제안한 카테고리와 담당자의 최종 선택이 일치하는 비율
@@ -122,8 +172,12 @@
 - **목표값**: ≥ 80%
 
 #### KPI-006: 모델 추론 메모리 사용량
-- **지표**: LLM 추론 시 GPU/CPU 메모리 사용량
-- **목표값**: ≤ 8GB VRAM (GPU 사용 시), ≤ 16GB RAM (CPU 전용 시)
+- **지표**: vLLM 서버 실행 시 GPU/CPU 메모리 사용량
+- **목표값**:
+  - bfloat16 모델: ≤ 15GB VRAM
+  - AWQ 양자화 모델: ≤ 8GB VRAM
+  - CPU RAM: ≤ 16GB (FastAPI + Streamlit 포함)
+- **모니터링**: nvidia-smi, vLLM metrics API 활용
 
 ### 3.3 성공 기준 (Success Criteria)
 - **Phase 1 (MVP)**: KPI-001, KPI-002 목표 달성 + 핵심 기능 구현 완료
@@ -209,21 +263,46 @@
 
 #### 4.3.2 모델 학습 및 최적화
 
-##### FR-005: 오픈소스 sLLM 선정 및 다운로드
-- 후보 모델: Gemma 2 (2B/7B), Llama 3 (8B), Qwen 2.5 (7B), Phi-3 등
-- 선정 기준: 한국어 성능, 모델 크기, 라이선스, 추론 속도
-- HuggingFace Hub에서 모델 가중치 다운로드
+##### FR-005: EXAONE-Deep-7.8B 모델 다운로드 및 설정
+- **선정 모델**: EXAONE-Deep-7.8B (LGAI-EXAONE/EXAONE-Deep-7.8B)
+- **선정 이유**:
+  - LG AI Research 개발 한국어 특화 모델 (한국 표준 테스트에서 89.9% 성능)
+  - 7.8B 파라미터로 온프레미스 환경에 적합한 크기
+  - 32,768 토큰 컨텍스트 길이 (긴 민원 처리 가능)
+  - Grouped Query Attention (GQA) 구조로 추론 효율성 향상
+  - 상업적 사용 가능 라이선스 (EXAONE AI Model License 1.1-NC)
+- HuggingFace Hub에서 모델 가중치 다운로드 (safetensors 형식)
 
 ##### FR-006: Supervised Fine-Tuning (SFT) 실행
-- LoRA 또는 QLoRA 기법을 사용한 효율적 파인튜닝
-- 학습 데이터: 크롤링된 민원-답변 쌍 (80% train, 10% validation, 10% test)
-- 하이퍼파라미터 튜닝: Learning rate, Batch size, Epoch, LoRA rank 등
-- 학습 환경: GPU 지원 (CUDA) 또는 CPU fallback
+- **파인튜닝 방법**: QLoRA (Quantized LoRA) 기법 사용
+  - EXAONE-Deep-7.8B의 Causal LM 구조 활용
+  - bfloat16 정밀도 기반 학습
+  - LoRA 어댑터만 학습하여 메모리 효율성 극대화
+- **학습 데이터**: 크롤링된 민원-답변 쌍 (80% train, 10% validation, 10% test)
+- **프롬프트 포맷**: EXAONE 표준 Chat Template 적용
+  - `<thought>\n` 접두사를 사용한 추론 강화
+  - 시스템 프롬프트 대신 유저 프롬프트로 민원 답변 지시사항 제공
+- **하이퍼파라미터**:
+  - Learning rate: 1e-4 ~ 3e-4
+  - Batch size: 4-8 (gradient accumulation 활용)
+  - Epochs: 3-5
+  - LoRA rank: 16-32
+  - LoRA alpha: 32-64
+  - Target modules: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj
+- **학습 환경**: GPU 지원 (CUDA, bfloat16) 또는 CPU fallback (fp32)
 
 ##### FR-007: 모델 Quantization (양자화)
-- INT8 또는 INT4 양자화로 모델 크기 및 추론 속도 최적화
-- 도구: ONNX Runtime, TensorRT, llama.cpp 등
-- 목표: 모델 크기 50% 이상 감소, 추론 속도 2배 이상 향상
+- **양자화 방법**: AWQ (Activation-aware Weight Quantization) 또는 GGUF 포맷
+  - EXAONE-Deep-7.8B는 공식적으로 AWQ 및 GGUF 양자화 지원
+  - 12가지 사전 양자화 버전 활용 가능
+- **양자화 도구**:
+  - AWQ: AutoAWQ 라이브러리 사용
+  - GGUF: llama.cpp 변환 도구 사용
+  - vLLM 호환 양자화 포맷 우선 고려
+- **양자화 레벨**:
+  - INT8: 정확도 유지하면서 50% 크기 감소
+  - INT4: 추론 속도 최대화 (75% 크기 감소)
+- **목표**: 모델 크기 50% 이상 감소, 추론 속도 2배 이상 향상, vLLM 서빙 호환성 확보
 
 ##### FR-008: 모델 평가 및 벤치마킹
 - 평가 지표: Accuracy, F1-Score, BLEU/ROUGE (답변 품질), Perplexity
@@ -232,10 +311,20 @@
 
 #### 4.3.3 답변 생성 엔진
 
-##### FR-009: 표준 답변 서식 시스템 프롬프트 설계
-- 공공기관 답변 표준 서식 정의 (인사말, 본문, 담당부서, 연락처 등)
-- 프롬프트 엔지니어링: Few-shot examples, Chain-of-Thought 등 적용
-- 톤앤매너 일관성 유지 (공식적, 공손한 표현)
+##### FR-009: 표준 답변 서식 프롬프트 설계
+- **공공기관 답변 표준 서식 정의**:
+  - 인사말, 본문, 담당부서, 연락처 등 구조화
+- **EXAONE-Deep 특화 프롬프트 엔지니어링**:
+  - `<thought>\n` 접두사 자동 추가 (추론 강화)
+  - 시스템 프롬프트 대신 유저 프롬프트 활용
+  - Few-shot examples: 3-5개 민원-답변 예시 제공
+  - Step-by-step reasoning 지시문 포함
+  - 예시: "다음 민원에 대해 단계적으로 분석하고, 표준 서식에 맞춰 공손하고 명확한 답변을 작성하세요."
+- **생성 파라미터**:
+  - Temperature: 0.6 (EXAONE 권장값)
+  - Top-p: 0.95 (EXAONE 권장값)
+  - Max tokens: 512-1024 (답변 길이 제어)
+- **톤앤매너 일관성**: 공식적, 공손한 표현 유지
 
 ##### FR-010: 민원 분류 기능
 - 입력: 민원 본문 텍스트
@@ -243,9 +332,17 @@
 - 방법: LLM 기반 Zero-shot 또는 Few-shot 분류
 
 ##### FR-011: 답변 초안 생성 기능
-- 입력: 민원 본문 + 분류 카테고리 (선택적)
-- 출력: 표준 서식 기반 답변 초안 (200-500자)
-- 생성 파라미터: Temperature, Top-p, Max tokens 조정 가능
+- **입력**: 민원 본문 + 분류 카테고리 (선택적) + 유사 사례 (RAG)
+- **출력**: 표준 서식 기반 답변 초안 (200-500자)
+- **EXAONE 추론 활용**:
+  - `<thought>\n` 접두사로 단계별 추론 과정 생성
+  - 추론 과정: 민원 분석 → 핵심 요청사항 파악 → 답변 방향 설정 → 최종 답변 작성
+  - 긴 컨텍스트(32K) 활용으로 여러 유사 사례 동시 참조
+- **생성 파라미터**:
+  - Temperature: 0.6 (EXAONE 권장)
+  - Top-p: 0.95
+  - Max tokens: 512-1024
+  - Repetition penalty: 1.1
 
 ##### FR-012: 답변 생성 시 유사 사례 참조 (RAG)
 - FAISS 벡터 검색으로 상위 3-5개 유사 사례 검색
@@ -255,9 +352,18 @@
 #### 4.3.4 유사 사례 검색 (벡터 검색)
 
 ##### FR-013: 문서 임베딩 생성
-- 모든 과거 민원-답변 데이터를 벡터로 변환
-- 임베딩 모델: KoSimCSE, KoBERT, Sentence-Transformers (다국어 모델) 등
-- 벡터 차원: 384-768 차원
+- **모든 과거 민원-답변 데이터를 벡터로 변환**
+- **임베딩 모델 선정**:
+  - 1순위: **multilingual-e5-large** (intfloat/multilingual-e5-large)
+    - 1024 차원 임베딩
+    - 한국어 포함 다국어 지원
+    - 높은 검색 정확도
+  - 2순위: KoSimCSE-roberta (BM-K/KoSimCSE-roberta)
+    - 768 차원 임베딩
+    - 한국어 특화
+- **벡터 차원**: 768-1024 차원 (모델에 따라)
+- **배치 처리**: 256-512 문서씩 배치 임베딩 생성
+- **정규화**: L2 normalization 적용 (코사인 유사도 최적화)
 
 ##### FR-014: FAISS 인덱스 구축
 - FAISS 라이브러리를 사용한 벡터 인덱스 생성
@@ -275,15 +381,38 @@
 
 #### 4.3.5 온프레미스 서빙 최적화
 
-##### FR-017: Ollama 통합
-- Ollama를 사용한 로컬 LLM 서빙
-- 모델 로드 및 초기화 자동화
-- API 엔드포인트: `/api/generate`, `/api/chat` 등
+##### FR-017: vLLM 서빙 통합
+- **vLLM (v0.4.0+) 사용**: 고성능 LLM 추론 서버
+  - EXAONE-Deep-7.8B 공식 지원 프레임워크
+  - PagedAttention 기술로 메모리 효율 극대화
+  - Continuous batching으로 처리량 향상
+- **모델 로드 및 초기화**:
+  - safetensors 형식 모델 자동 로드
+  - Tensor parallelism 지원 (멀티 GPU 환경)
+  - 양자화 모델 (AWQ) 자동 감지 및 로드
+- **API 엔드포인트**:
+  - OpenAI 호환 API: `/v1/completions`, `/v1/chat/completions`
+  - Health check: `/health`, `/v1/models`
+- **서빙 설정**:
+  - `--host 0.0.0.0 --port 8000`
+  - `--model LGAI-EXAONE/EXAONE-Deep-7.8B`
+  - `--dtype bfloat16` 또는 `auto`
+  - `--max-model-len 32768` (전체 컨텍스트 활용)
 
 ##### FR-018: 추론 최적화
-- Batch inference 지원 (여러 민원 동시 처리)
-- GPU 가속 지원 (CUDA, MPS for macOS)
-- CPU 전용 환경에서도 실용적인 속도 확보 (5초 이하)
+- **vLLM 최적화 기능 활용**:
+  - Continuous batching: 여러 민원 동시 처리로 처리량 향상
+  - PagedAttention: KV 캐시 메모리 효율 극대화
+  - Speculative decoding (선택적): 추론 속도 추가 향상
+- **GPU 가속 지원**:
+  - CUDA 12.1+ (NVIDIA GPU)
+  - Tensor parallelism (멀티 GPU 환경)
+  - Flash Attention 2 활용
+- **추론 파라미터 최적화**:
+  - `--gpu-memory-utilization 0.9` (GPU 메모리 최대 활용)
+  - `--max-num-seqs 256` (배치 크기)
+  - `--swap-space 4` (CPU-GPU 스왑 공간)
+- **목표 성능**: p50 < 2초, p95 < 5초 (GPU 환경)
 
 ##### FR-019: 캐싱 메커니즘
 - 동일 민원 재입력 시 캐싱된 결과 반환 (Redis 또는 인메모리)
@@ -327,9 +456,19 @@
 #### 4.3.7 배포 및 설치
 
 ##### FR-027: Docker 컨테이너화
-- Dockerfile 작성 (멀티스테이지 빌드 최적화)
-- Docker Compose 설정 (여러 서비스 통합 관리)
-- 이미지 크기 최적화 (10GB 이하 목표)
+- **멀티컨테이너 아키텍처**:
+  - `vllm-service`: vLLM 서버 (GPU 지원, EXAONE-Deep-7.8B 서빙)
+  - `backend-service`: FastAPI 서버 (vLLM API 클라이언트, FAISS 검색)
+  - `frontend-service`: Streamlit 웹 UI
+- **Dockerfile 작성**:
+  - vLLM: `vllm/vllm-openai:latest` 베이스 이미지 활용
+  - Backend/Frontend: `python:3.10-slim` + 멀티스테이지 빌드
+- **Docker Compose 설정**:
+  - GPU 리소스 할당 (`deploy.resources.reservations.devices`)
+  - 볼륨 마운트 (모델 캐시, 벡터 인덱스, 로그)
+  - 내부 네트워크 격리 (`networks`)
+  - Health check 설정
+- **이미지 크기**: vLLM 이미지 약 15GB (CUDA 포함), 전체 스택 약 20-25GB
 
 ##### FR-028: 폐쇄망 설치 가이드
 - 인터넷 없이 설치 가능한 오프라인 패키지 제공
@@ -358,9 +497,21 @@
 - 초당 요청 처리: 최소 2 QPS (Queries Per Second)
 
 ##### NFR-003: 리소스 사용
-- GPU 메모리: ≤ 8GB (GPU 사용 시)
-- CPU 메모리: ≤ 16GB (CPU 전용 시)
-- 디스크 용량: ≤ 20GB (모델 + 벡터 인덱스 포함)
+- **GPU 메모리**:
+  - EXAONE-Deep-7.8B (bfloat16): 약 15GB VRAM
+  - AWQ 양자화 (INT4): 약 8GB VRAM
+  - 권장: 16GB VRAM 이상 (NVIDIA A10G, RTX 4090, A100 등)
+- **CPU 메모리**:
+  - vLLM 서버: 8-16GB RAM
+  - FastAPI + Streamlit: 4-8GB RAM
+  - 총 권장: 32GB RAM
+- **디스크 용량**:
+  - 베이스 모델: 15GB
+  - 파인튜닝 모델: 15-20GB
+  - 양자화 모델: 5-8GB
+  - 벡터 인덱스: 1-5GB
+  - Docker 이미지: 10-15GB
+  - 총 권장: 60GB 여유 공간
 
 #### 4.4.2 보안 (Security)
 
@@ -433,19 +584,20 @@
 #### Phase 1 (MVP - Week 1-8)
 - **IS-001**: 공개 민원 데이터 크롤러 개발 (최소 10,000건 수집)
 - **IS-002**: 데이터 비식별화 및 전처리 파이프라인
-- **IS-003**: 오픈소스 sLLM 선정 및 SFT (Supervised Fine-Tuning)
-- **IS-004**: 표준 답변 생성 기능 (시스템 프롬프트 기반)
-- **IS-005**: Streamlit 기반 기본 웹 UI (민원 입력, 답변 출력)
-- **IS-006**: Docker 컨테이너 기반 배포 패키지
+- **IS-003**: EXAONE-Deep-7.8B 다운로드 및 QLoRA SFT (Supervised Fine-Tuning)
+- **IS-004**: EXAONE Chat Template 기반 표준 답변 생성 기능
+- **IS-005**: vLLM 서버 구축 및 OpenAI 호환 API 연동
+- **IS-006**: Streamlit 기반 기본 웹 UI (민원 입력, 답변 출력)
+- **IS-007**: Docker Compose 기반 멀티컨테이너 배포 패키지
 
 #### Phase 2 (고도화 - Week 9-16)
-- **IS-007**: FAISS 기반 유사 사례 검색 기능 (벡터 검색)
-- **IS-008**: RAG 파이프라인 통합 (검색 결과 활용한 답변 생성)
-- **IS-009**: 모델 Quantization 및 추론 최적화 (ONNX/TensorRT)
-- **IS-010**: 민원 자동 분류 기능 (카테고리 예측)
-- **IS-011**: 사용자 피드백 수집 기능
-- **IS-012**: 설치 및 사용자 매뉴얼 작성
-- **IS-013**: 성능 벤치마킹 및 최종 테스트
+- **IS-008**: FAISS 기반 유사 사례 검색 기능 (multilingual-e5-large 임베딩)
+- **IS-009**: RAG 파이프라인 통합 (검색 결과 활용한 답변 생성, 32K 컨텍스트 활용)
+- **IS-010**: AWQ Quantization 적용 및 vLLM 최적화 (PagedAttention, Flash Attention 2)
+- **IS-011**: 민원 자동 분류 기능 (EXAONE 추론 기반 카테고리 예측)
+- **IS-012**: 사용자 피드백 수집 기능
+- **IS-013**: 설치 및 사용자 매뉴얼 작성 (vLLM 설정 가이드 포함)
+- **IS-014**: 성능 벤치마킹 및 최종 테스트 (vLLM vs 기존 서빙 비교)
 
 ### 5.2 프로젝트 범위 외 항목 (Out-of-Scope Items)
 
@@ -479,35 +631,74 @@
 
 #### 전체 구조
 ```
-┌─────────────────────────────────────────────────────┐
-│                  폐쇄망 서버 환경                      │
-├─────────────────────────────────────────────────────┤
-│  ┌─────────────────────────────────────────────┐   │
-│  │    Streamlit Web UI (프론트엔드)             │   │
-│  └────────────────┬────────────────────────────┘   │
-│                   │ HTTP API                        │
-│  ┌────────────────▼────────────────────────────┐   │
-│  │    FastAPI Backend (백엔드 API 서버)         │   │
-│  │  - 민원 입력 처리                             │   │
-│  │  - 답변 생성 요청                             │   │
-│  │  - 유사 사례 검색                             │   │
-│  └─────┬──────────────────────────┬────────────┘   │
-│        │                          │                 │
-│  ┌─────▼──────────┐    ┌─────────▼──────────┐     │
-│  │ Ollama         │    │ FAISS Vector DB    │     │
-│  │ (LLM Serving)  │    │ (벡터 검색)         │     │
-│  │ - Gemma 2 7B   │    │ - 임베딩 인덱스     │     │
-│  │ - Quantized    │    │ - Sentence Trans.  │     │
-│  └────────────────┘    └────────────────────┘     │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │    Docker Compose 오케스트레이션             │   │
-│  │    - 서비스 컨테이너 관리                     │   │
-│  │    - 볼륨 마운트 (모델, 데이터)               │   │
-│  │    - 네트워크 격리                           │   │
-│  └─────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                  폐쇄망 서버 환경                           │
+├──────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────┐   │
+│  │    Streamlit Web UI (프론트엔드)                  │   │
+│  └────────────────┬─────────────────────────────────┘   │
+│                   │ HTTP API                             │
+│  ┌────────────────▼─────────────────────────────────┐   │
+│  │    FastAPI Backend (백엔드 API 서버)              │   │
+│  │  - 민원 입력 처리                                  │   │
+│  │  - 답변 생성 요청 (OpenAI 호환 API)                │   │
+│  │  - 유사 사례 검색                                  │   │
+│  └─────┬──────────────────────────┬─────────────────┘   │
+│        │                          │                      │
+│  ┌─────▼──────────────┐    ┌─────▼──────────────────┐  │
+│  │ vLLM Server        │    │ FAISS Vector DB        │  │
+│  │ (LLM Serving)      │    │ (벡터 검색)             │  │
+│  │ - EXAONE-Deep-7.8B │    │ - 임베딩 인덱스         │  │
+│  │ - AWQ Quantized    │    │ - multilingual-e5-large│  │
+│  │ - OpenAI API 호환  │    │ - 10,000+ 민원 벡터    │  │
+│  │ - PagedAttention   │    │ - IndexIVFFlat         │  │
+│  └────────────────────┘    └────────────────────────┘  │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │    Docker Compose 오케스트레이션                  │   │
+│  │    - vLLM 컨테이너 (GPU 지원)                     │   │
+│  │    - FastAPI + Streamlit 컨테이너                 │   │
+│  │    - 볼륨 마운트 (모델, 인덱스, 데이터)            │   │
+│  │    - 내부 네트워크 격리                            │   │
+│  └──────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────┘
 ```
+
+### 6.2 EXAONE-Deep-7.8B 모델 상세 (Model Details)
+
+#### 6.2.0 EXAONE-Deep-7.8B 특징 및 이점
+
+##### 모델 아키텍처
+- **파라미터 수**: 7.8B (6.98B without embeddings)
+- **레이어 수**: 32 layers
+- **어텐션 구조**: Grouped Query Attention (GQA)
+  - 32 Query heads
+  - 8 Key-Value heads
+  - 메모리 효율적인 어텐션 연산
+- **어휘 크기**: 102,400 토큰
+- **컨텍스트 길이**: 32,768 토큰 (긴 민원 문서 처리 최적)
+- **정밀도**: bfloat16 지원
+
+##### 한국어 성능 우수성
+- **CSAT Math 2025** (한국 수능 수학): 89.9% 정답률
+- **한국어 Reasoning**: Step-by-step 추론 능력 탁월
+- **한국어 어휘**: 102,400 토큰에 한국어 대량 포함
+
+##### 추론 강화 기능 (`<thought>`)
+- 단계별 사고 과정을 명시적으로 생성
+- 민원 분석 → 요청사항 파악 → 답변 논리 구성 → 최종 답변
+- 답변 품질 및 신뢰도 향상
+
+##### 양자화 지원
+- **공식 AWQ 양자화 버전** 12개 제공
+- **GGUF 변환** 지원 (llama.cpp 호환)
+- vLLM, TensorRT-LLM, SGLang 등 주요 프레임워크 지원
+
+##### 민원 처리 적합성
+- **긴 컨텍스트**: 여러 유사 사례를 동시에 참조 가능
+- **한국어 특화**: 공공기관 용어, 행정 언어에 강점
+- **추론 능력**: 복잡한 민원도 논리적으로 분석 가능
+- **적절한 크기**: 7.8B로 온프레미스 환경에서 실용적
 
 ### 6.2 기술 스택 (Technology Stack)
 
@@ -527,20 +718,21 @@
 #### 6.2.3 AI/ML 모델
 | 기술 | 용도 | 비고 |
 |------|------|------|
-| HuggingFace Transformers | 모델 학습/추론 | ≥ 4.35.0 |
-| PEFT (LoRA/QLoRA) | 효율적 파인튜닝 | ≥ 0.7.0 |
-| Ollama | 로컬 LLM 서빙 | Latest |
-| Gemma 2 / Llama 3 | 기본 모델 (sLLM) | 7B 파라미터 |
-| Sentence-Transformers | 문서 임베딩 | KoSimCSE 또는 multilingual |
-| FAISS | 벡터 유사도 검색 | ≥ 1.7.4 |
+| HuggingFace Transformers | 모델 학습/추론 | ≥ 4.40.0 (EXAONE 지원) |
+| PEFT (QLoRA) | 효율적 파인튜닝 | ≥ 0.10.0 |
+| **vLLM** | **고성능 LLM 서빙** | **≥ 0.4.0 (EXAONE 지원)** |
+| **EXAONE-Deep-7.8B** | **기본 모델 (한국어 특화)** | **7.8B 파라미터, 32K 컨텍스트** |
+| Sentence-Transformers | 문서 임베딩 | multilingual-e5-large 또는 KoSimCSE |
+| FAISS | 벡터 유사도 검색 | ≥ 1.7.4 (CPU/GPU 지원) |
 
 #### 6.2.4 모델 최적화
 | 기술 | 용도 | 비고 |
 |------|------|------|
-| ONNX Runtime | 모델 추론 가속 | 선택적 |
-| TensorRT | GPU 추론 최적화 | NVIDIA GPU 환경 |
-| llama.cpp | CPU 양자화 추론 | GGUF 포맷 |
-| Quantization | INT8/INT4 양자화 | 모델 크기 감소 |
+| **AWQ (AutoAWQ)** | **Activation-aware Quantization** | **EXAONE 공식 지원, vLLM 호환** |
+| **Flash Attention 2** | **Attention 연산 가속** | **vLLM 자동 활용** |
+| llama.cpp | CPU 양자화 추론 (대체 방안) | GGUF 포맷, Ollama 호환 |
+| GGUF Conversion | 모델 변환 도구 | llama.cpp 기반 CPU 추론용 |
+| bfloat16 | 반정밀도 연산 | GPU 메모리 절약 |
 
 #### 6.2.5 데이터 처리
 | 기술 | 용도 | 비고 |
@@ -548,6 +740,35 @@
 | Beautiful Soup / Scrapy | 웹 크롤링 | 민원 데이터 수집 |
 | Pandas | 데이터 전처리 | ≥ 2.0 |
 | NumPy | 수치 연산 | ≥ 1.24 |
+
+#### 6.2.5.1 vLLM 서빙 이점 (vLLM Advantages)
+
+##### PagedAttention 기술
+- **메모리 효율성**: KV 캐시를 페이지 단위로 관리
+- **메모리 낭비 제거**: 기존 방식 대비 최대 50% 메모리 절약
+- **배치 크기 증가**: 동일 GPU로 더 많은 요청 동시 처리
+
+##### Continuous Batching
+- **동적 배치 구성**: 요청이 완료되면 즉시 새 요청 추가
+- **처리량 향상**: 기존 정적 배치 대비 2-3배 향상
+- **지연 시간 감소**: 대기 시간 최소화
+
+##### OpenAI API 호환성
+- **표준 API**: `/v1/completions`, `/v1/chat/completions`
+- **쉬운 통합**: 기존 OpenAI 클라이언트 코드 재사용
+- **마이그레이션 용이**: 향후 다른 모델로 전환 시 최소 변경
+
+##### 프로덕션 최적화
+- **고성능**: Ollama 대비 2-5배 빠른 추론 속도
+- **확장성**: Tensor parallelism (멀티 GPU) 지원
+- **안정성**: 대규모 서비스 배포 검증 완료
+- **모니터링**: Prometheus 메트릭, 상세 로깅
+
+##### EXAONE-Deep 최적 지원
+- **공식 지원**: EXAONE-Deep 모델 카드에 명시
+- **GQA 최적화**: Grouped Query Attention 효율적 처리
+- **AWQ 통합**: 양자화 모델 자동 감지 및 로드
+- **긴 컨텍스트**: 32K 토큰 효율적 처리
 
 #### 6.2.6 배포 및 인프라
 | 기술 | 용도 | 비고 |
@@ -567,19 +788,27 @@
 ### 6.3 시스템 의존성 (System Dependencies)
 
 #### DEP-001: HuggingFace Hub
-- **용도**: 사전학습 모델 다운로드
-- **연결 방식**: 초기 설정 시에만 인터넷 연결 필요 (모델 다운로드)
-- **오프라인 대응**: 모델 파일을 로컬에 저장 후 오프라인 로드
+- **용도**: EXAONE-Deep-7.8B 모델 다운로드
+- **모델 경로**: `LGAI-EXAONE/EXAONE-Deep-7.8B`
+- **연결 방식**: 초기 설정 시에만 인터넷 연결 필요 (약 15GB 다운로드)
+- **오프라인 대응**:
+  - 모델 파일을 로컬 캐시 (`~/.cache/huggingface`) 저장
+  - Docker 이미지에 모델 사전 포함
+  - USB 등 오프라인 매체로 전달 가능
 
 #### DEP-002: Python 패키지
 - **용도**: 필수 라이브러리 설치
 - **연결 방식**: pip install (초기 설치 시)
 - **오프라인 대응**: requirements.txt 및 wheel 파일을 Docker 이미지에 포함
 
-#### DEP-003: GPU 드라이버 (선택적)
-- **용도**: CUDA 기반 GPU 가속
-- **요구사항**: NVIDIA GPU + CUDA 11.8+ + cuDNN
-- **대체 방안**: CPU 전용 모드 지원 (속도는 느림)
+#### DEP-003: GPU 드라이버
+- **용도**: vLLM 및 EXAONE-Deep-7.8B 추론 가속
+- **요구사항**:
+  - NVIDIA GPU (최소 16GB VRAM 권장, A100/A10G/RTX 4090 등)
+  - CUDA 12.1+ (vLLM 권장)
+  - NVIDIA Driver 525.60.13 이상
+- **Docker 지원**: nvidia-container-toolkit 설치 필요
+- **대체 방안**: CPU 전용 모드 (llama.cpp + GGUF, 속도 5-10배 느림)
 
 ### 6.4 통합 요구사항 (Integration Requirements)
 
@@ -625,8 +854,12 @@
 - 접근 로그 기록 (감사 추적)
 
 #### CONS-004: 모델 라이선스
-- 오픈소스 라이선스 준수 (Apache 2.0, MIT 등)
-- 상용 사용 가능 모델만 선정 (Gemma 2, Llama 3 등)
+- **EXAONE AI Model License Agreement 1.1-NC** 준수
+  - 비상업적(Non-Commercial) 연구 및 교육 목적 사용 허용
+  - 본 프로젝트는 학술 연구 프로젝트로 라이선스 요건 충족
+  - 상업적 배포 시 LG AI Research와 별도 협의 필요
+- vLLM: Apache 2.0 라이선스 (상용 사용 가능)
+- 기타 라이브러리: Apache 2.0, MIT 라이선스
 
 ---
 
@@ -782,10 +1015,11 @@
 **Given** 전처리된 학습 데이터가 준비되었을 때
 **When** SFT 파인튜닝을 실행하면
 **Then**
-- 선택한 sLLM (Gemma 2 또는 Llama 3)이 성공적으로 로드된다
-- LoRA/QLoRA 파인튜닝이 에러 없이 완료된다
+- EXAONE-Deep-7.8B 베이스 모델이 성공적으로 로드된다 (bfloat16 형식)
+- QLoRA 파인튜닝이 에러 없이 완료된다 (LoRA 어댑터 저장)
+- EXAONE Chat Template이 올바르게 적용된다 (`<thought>\n` 접두사 포함)
 - 테스트 데이터셋(1,000건)에서 답변 생성 정확도가 BLEU > 0.3 또는 ROUGE-L > 0.4를 달성한다
-- 파인튜닝된 모델이 로컬에 저장된다
+- 파인튜닝된 LoRA 어댑터가 로컬에 저장되고 베이스 모델과 병합 가능하다
 
 #### AC-003: 답변 초안 생성
 **Given** 민원 본문이 입력되었을 때
@@ -821,13 +1055,15 @@
 - Ctrl+V로 다른 곳에 붙여넣기 가능하다
 
 #### AC-007: Docker 배포
-**Given** Docker가 설치된 폐쇄망 서버가 준비되었을 때
+**Given** Docker 및 nvidia-container-toolkit이 설치된 폐쇄망 서버가 준비되었을 때
 **When** `docker-compose up -d` 명령을 실행하면
 **Then**
-- 모든 컨테이너가 에러 없이 시작된다
-- 웹 UI가 지정된 포트(예: 8501)에서 접근 가능하다
-- 인터넷 연결 없이도 정상 작동한다
-- 모델 및 벡터 인덱스가 정상적으로 로드된다
+- vLLM 컨테이너가 GPU를 인식하고 정상 시작된다
+- EXAONE-Deep-7.8B 모델이 vLLM에 로드된다 (약 30-60초 소요)
+- FastAPI 백엔드 컨테이너가 vLLM API와 연결된다
+- Streamlit 웹 UI가 지정된 포트(예: 8501)에서 접근 가능하다
+- 인터넷 연결 없이도 정상 작동한다 (모델 및 인덱스 사전 포함)
+- `/health` 엔드포인트가 200 응답을 반환한다
 
 ### 8.2 테스트 요구사항 (Testing Requirements)
 
@@ -903,9 +1139,9 @@
 
 | 주차 | 작업 내용 | 산출물 | 담당 역할 |
 |------|-----------|--------|-----------|
-| **W5** | - 오픈소스 sLLM 선정 및 다운로드<br>- 학습 데이터 포맷 변환<br>- 파인튜닝 환경 설정 | - 선정된 모델 (Gemma 2 또는 Llama 3)<br>- 학습 데이터 JSON | AI 엔지니어 |
-| **W6** | - SFT (Supervised Fine-Tuning) 실행<br>- 하이퍼파라미터 튜닝<br>- 모델 평가 | - 파인튜닝된 모델<br>- 성능 평가 리포트 | AI 엔지니어 |
-| **W7** | - FastAPI 백엔드 구축<br>- 답변 생성 API 구현<br>- 표준 프롬프트 설계 | - 백엔드 API 서버<br>- API 엔드포인트 | 백엔드 개발자 |
+| **W5** | - EXAONE-Deep-7.8B 모델 다운로드 및 검증<br>- 학습 데이터 EXAONE Chat Template 포맷 변환<br>- QLoRA 파인튜닝 환경 설정 | - EXAONE-Deep-7.8B 모델 (15GB)<br>- Chat Template 적용 학습 데이터<br>- PEFT 설정 파일 | AI 엔지니어 |
+| **W6** | - QLoRA SFT 실행 (bfloat16)<br>- 하이퍼파라미터 튜닝<br>- 모델 평가 및 벤치마킹 | - 파인튜닝된 LoRA 어댑터<br>- 성능 평가 리포트<br>- 병합된 모델 | AI 엔지니어 |
+| **W7** | - FastAPI 백엔드 구축<br>- vLLM OpenAI 호환 API 연동<br>- EXAONE 표준 프롬프트 설계 | - 백엔드 API 서버<br>- vLLM 클라이언트 통합<br>- API 엔드포인트 | 백엔드 개발자 |
 | **W8** | - Streamlit 웹 UI 구축<br>- 민원 입력/출력 화면 구현<br>- MVP 통합 테스트 | - 기본 웹 UI<br>- MVP 데모 | 프론트엔드 개발자 |
 
 **마일스톤 2 완료 기준**:
@@ -922,8 +1158,8 @@
 |------|-----------|--------|-----------|
 | **W9** | - FAISS 벡터 인덱스 구축<br>- 문서 임베딩 생성<br>- 유사도 검색 API 구현 | - FAISS 인덱스 파일<br>- 검색 API | 데이터 엔지니어 |
 | **W10** | - RAG 파이프라인 통합<br>- 검색 결과 활용 답변 생성<br>- 민원 자동 분류 기능 추가 | - RAG 통합 시스템<br>- 분류 기능 | AI 엔지니어 |
-| **W11** | - 모델 Quantization (INT8/INT4)<br>- Ollama 통합<br>- 추론 속도 최적화 | - 양자화된 모델<br>- 성능 개선 리포트 | AI 엔지니어 |
-| **W12** | - UI 개선 (유사 사례 표시, 피드백 기능)<br>- 클립보드 복사 기능<br>- Docker 컨테이너화 | - 최종 웹 UI<br>- Dockerfile, docker-compose.yml | 프론트엔드 + DevOps |
+| **W11** | - 모델 AWQ Quantization<br>- vLLM 서버 구축 및 배포<br>- 추론 속도 벤치마킹 | - AWQ 양자화된 모델<br>- vLLM 서빙 설정<br>- 성능 개선 리포트 | AI 엔지니어 |
+| **W12** | - UI 개선 (유사 사례 표시, 피드백 기능)<br>- 클립보드 복사 기능<br>- Docker 컨테이너화 (vLLM + FastAPI + Streamlit) | - 최종 웹 UI<br>- Dockerfile (멀티스테이지)<br>- docker-compose.yml (GPU 지원) | 프론트엔드 + DevOps |
 
 **마일스톤 3 완료 기준**:
 - ✅ 유사 사례 검색 기능 작동 (Recall@5 ≥ 80%)
@@ -971,17 +1207,18 @@
 ### 10.1 기술적 리스크 (Technical Risks)
 
 #### RISK-001: 모델 성능 미달
-**설명**: 파인튜닝된 sLLM이 기대한 답변 품질을 생성하지 못할 위험
+**설명**: 파인튜닝된 EXAONE-Deep-7.8B가 기대한 답변 품질을 생성하지 못할 위험
 
 **영향**: 높음 (프로젝트 핵심 목표)
 
-**발생 가능성**: 중간
+**발생 가능성**: 낮음 (EXAONE은 한국어 특화 모델로 기본 성능 우수)
 
 **완화 전략**:
-- **사전 예방**: 벤치마크 데이터셋으로 사전 테스트 (Gemma 2, Llama 3 비교)
+- **사전 예방**: EXAONE Chat Template 및 `<thought>\n` 접두사 정확히 적용
 - **대응 방안 1**: 더 많은 학습 데이터 수집 (20,000건 이상)
-- **대응 방안 2**: 프롬프트 엔지니어링 개선 (Few-shot examples, CoT)
-- **대응 방안 3**: 더 큰 모델로 변경 (7B → 13B, 단 추론 속도 감소)
+- **대응 방안 2**: Few-shot examples 확대 (3-5개 → 5-10개)
+- **대응 방안 3**: Step-by-step reasoning 프롬프트 강화 (EXAONE의 강점 활용)
+- **대응 방안 4**: Temperature 조정 (0.6 → 0.4-0.8 실험)
 - **최종 수단**: RAG 기반 템플릿 매칭으로 폴백 (검색된 유사 사례를 수정하여 제공)
 
 ---
@@ -991,14 +1228,15 @@
 
 **영향**: 중간 (사용자 경험 저하)
 
-**발생 가능성**: 높음
+**발생 가능성**: 중간 (vLLM 사용으로 감소)
 
 **완화 전략**:
-- **사전 예방**: Quantization (INT4/INT8) 적극 활용
-- **대응 방안 1**: 모델 크기 축소 (7B → 2B)
-- **대응 방안 2**: Ollama의 캐싱 기능 활용
-- **대응 방안 3**: GPU 서버 요청 (멘토 교수 또는 학교 지원)
-- **최종 수단**: "빠른 모드"와 "정확한 모드" 분리 (사용자 선택)
+- **사전 예방**: vLLM의 PagedAttention 및 Continuous Batching 활용
+- **대응 방안 1**: AWQ Quantization 적극 활용 (50% 속도 향상)
+- **대응 방안 2**: Flash Attention 2 활성화
+- **대응 방안 3**: GPU 서버 확보 (멘토 교수 또는 학교 지원)
+- **대응 방안 4**: Speculative Decoding 적용 (실험적)
+- **최종 수단**: CPU용 GGUF 변환 + llama.cpp (속도는 느리지만 작동 보장)
 
 ---
 
@@ -1010,10 +1248,11 @@
 **발생 가능성**: 중간
 
 **완화 전략**:
-- **사전 예방**: 고품질 임베딩 모델 선정 (KoSimCSE, multilingual-e5)
+- **사전 예방**: 고품질 임베딩 모델 선정 (multilingual-e5-large, KoSimCSE)
 - **대응 방안 1**: 하이브리드 검색 (벡터 + 키워드 BM25)
 - **대응 방안 2**: 유사도 임계값 조정 (낮은 점수 결과 필터링)
 - **대응 방안 3**: 사용자 피드백 기반 재학습 (클릭 로그 활용)
+- **참고**: EXAONE-Deep의 긴 컨텍스트(32K) 활용으로 더 많은 유사 사례 참조 가능
 
 ---
 
@@ -1126,12 +1365,14 @@
 
 ---
 
-#### OQ-004: 모델 크기 최종 결정
-**질문**: 2B, 7B, 13B 중 어느 모델 크기가 최적인가? (성능 vs 속도 트레이드오프)
+#### OQ-004: vLLM 서버 하드웨어 확보
+**질문**: vLLM 구동을 위한 GPU 서버 (최소 16GB VRAM)를 확보할 수 있는가?
 
-**담당**: AI 엔지니어가 벤치마크 후 결정
+**담당**: 멘토 교수에게 학교 GPU 서버 사용 가능 여부 문의
 
-**기한**: Week 5 (모델 선정 시점)
+**기한**: Week 4 (파인튜닝 시작 전)
+
+**대체 방안**: GPU 미확보 시 llama.cpp + GGUF로 CPU 추론 (성능 저하 감수)
 
 ---
 
@@ -1141,15 +1382,18 @@
 
 | 용어 | 정의 |
 |------|------|
-| **sLLM** | Small Language Model - 파라미터 수가 10B 미만인 경량화된 언어 모델 |
+| **EXAONE-Deep** | LG AI Research가 개발한 한국어 특화 추론 강화 언어 모델 (7.8B 파라미터) |
+| **vLLM** | PagedAttention 기술을 활용한 고성능 LLM 추론 서버 (OpenAI API 호환) |
 | **SFT** | Supervised Fine-Tuning - 라벨된 데이터를 사용한 지도 학습 기반 파인튜닝 |
-| **LoRA** | Low-Rank Adaptation - 효율적인 파인튜닝 기법 (전체 모델 대신 일부 레이어만 학습) |
-| **QLoRA** | Quantized LoRA - LoRA에 양자화를 결합하여 메모리 사용량을 더욱 줄인 기법 |
+| **QLoRA** | Quantized LoRA - LoRA에 양자화를 결합하여 메모리 사용량을 줄인 효율적 파인튜닝 기법 |
+| **AWQ** | Activation-aware Weight Quantization - 가중치 양자화 시 활성화 값을 고려하여 정확도 유지 |
+| **PagedAttention** | vLLM의 핵심 기술로 KV 캐시를 효율적으로 관리하여 메모리 사용량 감소 |
+| **GQA** | Grouped Query Attention - 멀티헤드 어텐션의 효율적 변형 (EXAONE-Deep 사용) |
 | **FAISS** | Facebook AI Similarity Search - 대규모 벡터 유사도 검색 라이브러리 |
 | **RAG** | Retrieval-Augmented Generation - 검색 결과를 활용하여 답변 생성 품질을 향상시키는 기법 |
-| **Quantization** | 양자화 - 모델 가중치를 낮은 정밀도(INT8, INT4)로 변환하여 크기 및 속도 최적화 |
 | **Embedding** | 임베딩 - 텍스트를 고차원 벡터로 변환한 수치 표현 (의미적 유사도 계산 가능) |
-| **Ollama** | 로컬 환경에서 LLM을 쉽게 실행할 수 있는 오픈소스 도구 |
+| **bfloat16** | Brain Floating Point 16-bit - GPU 학습에 최적화된 반정밀도 데이터 타입 |
+| **Chat Template** | 대화형 모델의 입력 포맷 (시스템/유저/어시스턴트 메시지 구조화) |
 | **Streamlit** | Python 기반 웹 UI 프레임워크 (데이터 사이언스 및 ML 앱 구축에 특화) |
 | **폐쇄망** | 인터넷 연결이 차단된 내부 네트워크 환경 (온프레미스) |
 | **비식별화** | 개인정보를 식별할 수 없도록 가명 처리 또는 마스킹하는 작업 |
@@ -1157,16 +1401,20 @@
 ### 11.2 참고 자료 (References)
 
 #### 기술 문서
+- **EXAONE-Deep 모델 카드**: https://huggingface.co/LGAI-EXAONE/EXAONE-Deep-7.8B
+- **EXAONE GitHub**: https://github.com/LG-AI-EXAONE/EXAONE-Deep
+- **vLLM 문서**: https://docs.vllm.ai/en/latest/
 - HuggingFace Transformers: https://huggingface.co/docs/transformers
-- PEFT (LoRA) 문서: https://huggingface.co/docs/peft
+- PEFT (QLoRA) 문서: https://huggingface.co/docs/peft
 - FAISS 문서: https://github.com/facebookresearch/faiss
-- Ollama 문서: https://ollama.com/docs
 - Streamlit 문서: https://docs.streamlit.io
 
 #### 관련 논문
-- "LoRA: Low-Rank Adaptation of Large Language Models" (Hu et al., 2021)
-- "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks" (Lewis et al., 2020)
+- **"EXAONE Deep: Reasoning Enhanced Language Models"** (LG AI Research, arXiv:2503.12524, 2025)
+- "Efficient Memory Management for Large Language Model Serving with PagedAttention" (vLLM, 2023)
 - "QLoRA: Efficient Finetuning of Quantized LLMs" (Dettmers et al., 2023)
+- "AWQ: Activation-aware Weight Quantization" (Lin et al., 2023)
+- "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks" (Lewis et al., 2020)
 
 #### 규정 및 가이드라인
 - 행정안전부 "공공 AI 윤리 가이드라인"
@@ -1178,6 +1426,7 @@
 | 버전 | 날짜 | 작성자 | 변경 내용 |
 |------|------|--------|-----------|
 | 1.0 | 2026-03-04 | Claude Code | 초안 작성 - 전체 PRD 구조 및 내용 작성 |
+| 2.0 | 2026-03-05 | Claude Code | 주요 기술 스택 변경: EXAONE-Deep-7.8B 모델 적용, vLLM 서빙 적용, AWQ 양자화 적용, 한국어 특화 최적화 |
 
 ---
 
