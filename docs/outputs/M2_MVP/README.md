@@ -106,6 +106,7 @@
 - 실험 계획서 및 결과 기록 문서 작성
 - AI Hub 데이터 수집 및 전처리 (71852, 71844)
 - EXAONE-Deep-7.8B QLoRA Baseline (r=16) 학습 완료 (Best Eval Loss: 1.0179)
+- **Hugging Face Model Adapter**: [umyunsang/civil-complaint-exaone-lora](https://huggingface.co/umyunsang/civil-complaint-exaone-lora)
 - HuggingFace Model Hub 어댑터 배포 완료 ([umyunsang/civil-complaint-exaone-lora](https://huggingface.co/umyunsang/civil-complaint-exaone-lora))
 
 **진행 중인 작업**:

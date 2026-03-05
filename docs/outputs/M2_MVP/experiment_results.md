@@ -38,6 +38,7 @@
   - **Final (Step 781)**: Training Loss ~1.01 / **Best Eval Loss 1.0179** (at Step 700)
   - **Status**: **Completed**
 - **WandB Run**: [offline-run-kmx8rlvv](https://wandb.ai/offline) (로컬 기록 완료)
+- **Hugging Face Model**: [umyunsang/civil-complaint-exaone-lora](https://huggingface.co/umyunsang/civil-complaint-exaone-lora)
 - **비고**: 
   - `transformers 5.3.0` 및 `trl 0.12.0` 호환성 패치 적용 후 실행됨.
   - L4 런타임(24GB)에서 OOM 발생 후 A100으로 이전하여 성공적으로 완주.
