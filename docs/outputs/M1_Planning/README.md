@@ -17,6 +17,7 @@
 ### Week 3: 데이터 수집
 - [x] 03_Data_Collection/crawling_targets.md - 크롤링 대상 목록
 - [x] 03_Data_Collection/crawler_prototype/ - 크롤러 초안
+- [x] 03_Data_Collection/dataset_and_environment_specs.md - 데이터셋 및 학습 환경 명세서
 - [ ] 03_Data_Collection/preprocessing_script.py - 전처리 스크립트
 - [ ] 03_Data_Collection/data_quality_report.md - 데이터 품질 리포트
 
