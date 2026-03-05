@@ -15,8 +15,8 @@
 - [x] 02_System_Design/api_specification.md - API 명세서
 
 ### Week 3: 데이터 수집
-- [ ] 03_Data_Collection/crawling_targets.md - 크롤링 대상 목록
-- [ ] 03_Data_Collection/crawler_prototype/ - 크롤러 초안
+- [x] 03_Data_Collection/crawling_targets.md - 크롤링 대상 목록
+- [x] 03_Data_Collection/crawler_prototype/ - 크롤러 초안
 - [ ] 03_Data_Collection/preprocessing_script.py - 전처리 스크립트
 - [ ] 03_Data_Collection/data_quality_report.md - 데이터 품질 리포트
 
