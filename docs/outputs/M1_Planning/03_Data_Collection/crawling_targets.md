@@ -84,14 +84,29 @@
     4. 활용 목적 및 동의사항 체크 후 신청 (대부분 자동 승인)
     5. **마이페이지 > 오픈API > 개발계정**에서 인증키(Encoding/Decoding) 확인
 
-### 4.3 AI Hub (대용량 데이터셋)
+### 4.3 AI Hub (대용량 데이터셋 - aihubshell 활용)
 - **대상**: 민원 질의-응답 데이터, 용도별 목적대화 데이터 (정제 완료된 JSON/CSV)
 - **URL**: [https://aihub.or.kr/](https://aihub.or.kr/)
-- **확보 절차**:
-    1. 회원가입 및 로그인
-    2. 데이터셋 검색 (예: `민원 질의`) 후 **[데이터 활용 신청]**
-    3. 승인 확인 후 전용 다운로더(Agent) 설치
-    4. 대용량 압축 파일(ZIP/JSON) 일괄 다운로드 및 로컬 정제
+- **aihubshell 활용 수집 절차**:
+    1.  **도구 다운로드**: 
+        ```bash
+        curl -o "aihubshell" https://api.aihub.or.kr/api/aihubshell.do
+        chmod +x aihubshell
+        ```
+    2.  **민원 데이터셋 검색**:
+        ```bash
+        ./aihubshell -mode l | grep '민원'
+        ```
+        - 검색 결과에서 '민원 질의-응답 데이터'의 `datasetkey` 확인.
+    3.  **데이터셋 상세 정보 조회**:
+        ```bash
+        ./aihubshell -mode l -datasetkey {datasetkey}
+        ```
+    4.  **데이터 다운로드**:
+        ```bash
+        ./aihubshell -mode d -datasetkey {datasetkey} -aihubapikey '{발급받은_키}'
+        ```
+        - API Key는 마이페이지에서 발급 후 이메일로 수령. 특수문자 포함 시 홑따옴표(`' '`) 필수 사용.
 
 ## 5. 향후 계획
 - [ ] 각 타겟별 세부 HTML Selector 분석 완료 (W3)
