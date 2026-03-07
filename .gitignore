@@ -60,6 +60,7 @@ data/calibration/
 *.json
 *.jsonl
 !configs/*.json
+!docs/outputs/M2_MVP/*.json
 !src/training/*.json
 
 # Model files (large)
@@ -89,3 +90,10 @@ htmlcov/
 .claude_bak/
 .gemini_bak/
 
+
+# Large model files (AWQ quantized, merged)
+models/awq_quantized_model/
+models/merged_model/
+*.safetensors
+*.gguf
+wandb/
