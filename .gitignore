@@ -75,6 +75,7 @@ logs/
 # Environment variables
 .env
 .env.local
+GITHUB_CREDENTIALS.md
 
 # OS
 .DS_Store

@@ -36,3 +36,4 @@ pytest-cov>=4.1.0
 
 # Logging & Monitoring
 loguru>=0.7.0
+faiss-cpu\nbert-score
